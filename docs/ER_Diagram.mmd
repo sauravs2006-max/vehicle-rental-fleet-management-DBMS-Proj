@@ -1,0 +1,158 @@
+erDiagram
+  %% PostgreSQL relational entities
+  USERS {
+    int user_id PK
+    varchar email UK
+    text password_hash
+    varchar full_name
+    varchar phone
+    varchar role
+    varchar license_no
+    int loyalty_points
+    timestamptz created_at
+  }
+  BRANCHES {
+    int branch_id PK
+    varchar name UK
+    varchar city
+    varchar address
+  }
+  VEHICLES {
+    int vehicle_id PK
+    int branch_id FK
+    varchar reg_no UK
+    varchar make
+    varchar model
+    varchar category
+    varchar fuel_type
+    smallint seats
+    numeric daily_rate
+    numeric per_km_rate
+    int odometer_km
+    int last_service_km
+    int service_interval_km
+    varchar status
+    date registration_expiry
+    date insurance_expiry
+    date puc_expiry
+  }
+  DRIVERS {
+    int driver_id PK
+    varchar full_name
+    varchar phone
+    varchar license_no UK
+    date license_expiry
+    boolean is_active
+  }
+  BOOKINGS {
+    int booking_id PK
+    int user_id FK
+    int vehicle_id FK
+    int driver_id FK
+    timestamptz start_ts
+    timestamptz end_ts
+    timestamptz returned_ts
+    int est_distance_km
+    int actual_distance_km
+    numeric total_fare
+    varchar status
+    text cancel_reason
+    timestamptz created_at
+  }
+  PAYMENTS {
+    int payment_id PK
+    int booking_id FK
+    numeric amount
+    varchar method
+    varchar kind
+    varchar status
+    timestamptz paid_at
+  }
+  MAINTENANCE_LOGS {
+    int log_id PK
+    int vehicle_id FK
+    varchar service_type
+    text description
+    text parts_replaced
+    numeric cost
+    int odometer_km
+    int downtime_days
+    date serviced_on
+  }
+  DAMAGE_REPORTS {
+    int report_id PK
+    int booking_id FK
+    int vehicle_id FK
+    varchar stage
+    varchar severity
+    text notes
+    text mongo_inspection_id
+    timestamptz created_at
+  }
+  REVIEWS {
+    int review_id PK
+    int booking_id FK,UK
+    int user_id FK
+    int vehicle_id FK
+    smallint rating
+    text comment
+    timestamptz created_at
+  }
+  DISPUTES {
+    int dispute_id PK
+    int booking_id FK
+    int raised_by FK
+    text reason
+    varchar status
+    text resolution_note
+    numeric refund_amount
+    int resolved_by FK
+    timestamptz created_at
+    timestamptz resolved_at
+  }
+  %% MongoDB collections (documents, not SQL tables)
+  INSPECTIONS {
+    objectId _id PK
+    int vehicle_id
+    int booking_id
+    int inspector_id
+    date inspection_date
+    string severity
+    string status
+    string notes
+    array photo_references
+    object checklist
+    date created_at
+  }
+  TELEMATICS {
+    objectId _id PK
+    int vehicle_id
+    date ts
+    number speed_kmph
+    number distance_km
+    number fuel_litres
+    number energy_kwh
+    number odometer_km
+    boolean harsh_brake
+    boolean harsh_accel
+    number engine_temp_c
+  }
+  BRANCHES ||--o{ VEHICLES : houses
+  USERS ||--o{ BOOKINGS : makes
+  VEHICLES ||--o{ BOOKINGS : rented_in
+  DRIVERS o|--o{ BOOKINGS : assigned_to
+  BOOKINGS ||--o{ PAYMENTS : paid_by
+  VEHICLES ||--o{ MAINTENANCE_LOGS : serviced_by
+  BOOKINGS ||--o{ DAMAGE_REPORTS : has
+  VEHICLES ||--o{ DAMAGE_REPORTS : concerns
+  BOOKINGS ||--o| REVIEWS : receives
+  USERS ||--o{ REVIEWS : writes
+  VEHICLES ||--o{ REVIEWS : receives
+  BOOKINGS ||--o{ DISPUTES : may_have
+  USERS ||--o{ DISPUTES : raises
+  USERS o|--o{ DISPUTES : resolves
+  %% USERS and VEHICLES are many-to-many over time through the associative BOOKINGS entity.\n  %% A booking can have multiple inspection documents (pre- and post-rental).
+  %% damage_reports.mongo_inspection_id is a string pointer to INSPECTIONS._id.
+  BOOKINGS ||..o{ INSPECTIONS : "MongoDB booking_id logical link"
+  VEHICLES ||..o{ INSPECTIONS : "MongoDB vehicle_id logical link"
+  VEHICLES ||..o{ TELEMATICS : "MongoDB vehicle_id logical link"
