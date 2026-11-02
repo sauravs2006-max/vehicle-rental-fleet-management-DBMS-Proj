@@ -2,7 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import Nav from "@/components/Nav";
 
-export const metadata: Metadata = { title: "FleetRent – Vehicle Rental & Fleet Management" };
+export const metadata: Metadata = { title: "FleetRent – Vehicle Rental & Fleet Management", icons: { icon: "data:," } };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

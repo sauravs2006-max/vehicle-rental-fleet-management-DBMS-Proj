@@ -50,12 +50,23 @@ export const GET = route(async (req) => {
         AND p.paid_at >= CURRENT_DATE - ($1::int - 1)
         AND p.paid_at < CURRENT_DATE + INTERVAL '1 day'
       GROUP BY v.branch_id, p.paid_at::date
+    ),
+    daily_bookings AS (
+      SELECT v.branch_id, b.created_at::date AS day, COUNT(*)::int AS bookings
+      FROM bookings b
+      JOIN vehicles v ON v.vehicle_id = b.vehicle_id
+      WHERE b.status <> 'Cancelled'
+        AND b.created_at >= CURRENT_DATE - ($1::int - 1)
+        AND b.created_at < CURRENT_DATE + INTERVAL '1 day'
+      GROUP BY v.branch_id, b.created_at::date
     )
     SELECT a.branch_id, a.branch, a.day,
            a.total_vehicles, a.available_vehicles,
+           COALESCE(db.bookings, 0)::int AS bookings,
            COALESCE(r.net_revenue, 0)::numeric(12,2) AS net_revenue
     FROM availability a
     LEFT JOIN daily_revenue r ON r.branch_id = a.branch_id AND r.day = a.day
+    LEFT JOIN daily_bookings db ON db.branch_id = a.branch_id AND db.day = a.day
     ORDER BY a.day, a.branch
   `, [days]);
   return json({ days, count: result.rowCount, rows: result.rows });

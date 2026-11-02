@@ -7,14 +7,15 @@ export const dynamic = "force-dynamic";
 
 export const GET = route(async () => {
   await requireRole("admin");
-  const [kpi, status, util, alerts, expiring, open, drivers, disputes, tele] = await Promise.all([
+  // Nothing else schedules this procedure, and only Active bookings can be checked in.
+  await query("CALL sp_activate_due_bookings()");
+  const [kpi, util, alerts, expiring, open, drivers, disputes, tele] = await Promise.all([
     query(`SELECT
         (SELECT COALESCE(SUM(CASE WHEN kind='Refund' THEN -amount ELSE amount END),0) FROM payments WHERE status='Paid') AS revenue,
         (SELECT count(*) FROM bookings WHERE status='Active')    AS active_rentals,
         (SELECT count(*) FROM bookings WHERE status='Confirmed') AS upcoming,
         (SELECT count(*) FROM disputes WHERE status='Open')      AS open_disputes,
         (SELECT count(*) FROM vehicles) AS fleet_size`),
-    query("SELECT status, count(*)::int AS count FROM vehicles GROUP BY status ORDER BY status"),
     query("SELECT * FROM v_fleet_utilization ORDER BY total_revenue DESC"),
     query("SELECT * FROM v_maintenance_alerts ORDER BY km_to_service"),
     query("SELECT * FROM v_expiring_documents ORDER BY days_left"),
@@ -30,7 +31,7 @@ export const GET = route(async () => {
     fleetTelematicsSummary(30).catch(() => null),   // dashboard still renders if MongoDB is down
   ]);
   return json({
-    kpis: kpi.rows[0], statusCounts: status.rows, utilization: util.rows, alerts: alerts.rows,
+    kpis: kpi.rows[0], utilization: util.rows, alerts: alerts.rows,
     expiring: expiring.rows, openBookings: open.rows, drivers: drivers.rows, disputes: disputes.rows, telematics: tele,
   });
 });

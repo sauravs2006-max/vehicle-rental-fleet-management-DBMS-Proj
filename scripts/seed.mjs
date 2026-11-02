@@ -41,7 +41,9 @@ const custIds = [2, 3, 4, 5, 6];   // priya, rahul, ananya, karthik, meera
 await q(`INSERT INTO branches (name, city, address) VALUES
   ('Indiranagar Hub','Bengaluru','100 Feet Rd, Indiranagar'),
   ('Kempegowda Airport','Bengaluru','Terminal 1 Parking, Devanahalli'),
-  ('Mysuru Central','Mysuru','Sayyaji Rao Rd, Mysuru')`);
+  ('Whitefield','Bengaluru','ITPL Main Rd, Whitefield'),
+  ('Koramangala','Bengaluru','80 Feet Rd, Koramangala 4th Block'),
+  ('Electronic City','Bengaluru','Hosur Rd, Electronic City Phase 1')`);
 await q(`INSERT INTO drivers (full_name, phone, license_no, license_expiry) VALUES
   ('Manjunath K','+91 99000 10001','KA0520100011',$1),
   ('Suresh Babu','+91 99000 10002','KA0520110022',$2),
@@ -60,10 +62,19 @@ const V = [
   [2,"KA05CD2002","Tata","Nexon EV","SUV","Electric",5,3200,8,15200,10000,1100,500,365,0],
   [2,"KA05CD2003","Toyota","Innova Crysta","Van","Diesel",7,4800,17,58000,50000,500,210,180,11],
   [2,"KA05CD2004","Kia","Seltos","SUV","Petrol",5,3500,14,26500,20000,650,260,170,14],
-  [3,"KA09EF3001","Hyundai","Verna","Sedan","Diesel",5,2900,12,23000,20000,720,280,190,17],
-  [3,"KA09EF3002","Maruti","Ertiga","Van","CNG",7,2600,10,41000,40000,610,230,140,20],
-  [3,"KA09EF3003","BMW","3 Series","Luxury","Petrol",5,7500,28,17800,10000,950,12,200,11],     // insurance expires in 12 days
-  [3,"KA09EF3004","Tata","Tiago","Hatchback","Petrol",5,1500,8,64000,60000,300,150,100,19],
+  [1,"KA09EF3001","Hyundai","Verna","Sedan","Diesel",5,2900,12,23000,20000,720,280,190,17],
+  [1,"KA09EF3002","Maruti","Ertiga","Van","CNG",7,2600,10,41000,40000,610,230,140,20],
+  [2,"KA09EF3003","BMW","3 Series","Luxury","Petrol",5,7500,28,17800,10000,950,12,200,11],     // insurance expires in 12 days
+  [2,"KA09EF3004","Tata","Tiago","Hatchback","Petrol",5,1500,8,64000,60000,300,150,100,19],
+  // Vehicle ids are positional and used by the live scenarios below, so new vehicles go at the end.
+  [3,"KA53GH4001","Maruti","Baleno","Hatchback","Petrol",5,1950,9,14200,10000,680,320,210,19],
+  [3,"KA53GH4002","Hyundai","Creta","SUV","Diesel",5,3600,14,22500,20000,790,360,240,16],
+  [3,"KA53GH4003","Tata","Harrier","SUV","Diesel",5,4000,15,18700,10000,840,410,280,15],
+  [4,"KA01JK5001","Honda","Amaze","Sedan","Petrol",5,2400,10,16600,10000,730,340,220,18],
+  [4,"KA01JK5002","MG","ZS EV","SUV","Electric",5,3400,9,12400,10000,1050,480,365,0],
+  [4,"KA01JK5003","Toyota","Glanza","Hatchback","Petrol",5,2050,9,11900,10000,660,300,190,20],
+  [5,"KA51LM6001","Renault","Kiger","SUV","Petrol",5,2200,9,13800,10000,770,350,230,17],
+  [5,"KA51LM6002","Maruti","Dzire","Sedan","CNG",5,2100,8,25400,20000,700,290,180,23],
 ];
 for (const v of V)
   await q(`INSERT INTO vehicles (branch_id, reg_no, make, model, category, fuel_type, seats, daily_rate, per_km_rate, odometer_km, last_service_km,
@@ -126,6 +137,9 @@ await liveBooking(1, 3, at(-1), at(2), "Active", 300);                          
 await liveBooking(8, 5, at(-2), new Date(now - 5 * 3600000), "Active", 200);     // Karthik is ~5h LATE with the Seltos  -> demo late fee
 await liveBooking(9, 2, at(3), at(6), "Confirmed", 250, true);                   // Priya's upcoming Verna (5% loyalty discount)
 await liveBooking(3, 6, at(1), at(2), "Confirmed", 350);                         // Meera's Honda City: 350 km pushes it past the service threshold -> trigger demo
+await liveBooking(13, 3, at(4), at(6), "Confirmed", 150);                        // Whitefield: Rahul's Baleno
+await liveBooking(16, 4, at(5), at(7), "Confirmed", 200);                        // Koramangala: Ananya's Amaze
+await liveBooking(19, 5, at(6), at(8), "Confirmed", 120);                        // Electronic City: Karthik's Kiger
 
 // ---------- reviews ----------
 const goodC = ["Smooth ride and very clean interior", "Great mileage, comfortable seats", "Pickup was quick, vehicle in perfect condition", "AC was ice cold, loved the sunroof"];
@@ -185,5 +199,5 @@ for (const [i, v] of V.entries()) {
 }
 await mdb.collection("telematics").insertMany(tele);
 
-console.log(`✔ seeded: ${completed.length} completed bookings, ${docs.length} inspection docs, ${tele.length} telematics readings`);
+console.log(`seeded: ${completed.length} completed bookings, ${docs.length} inspection docs, ${tele.length} telematics readings`);
 await pool.end(); await mongo.close();

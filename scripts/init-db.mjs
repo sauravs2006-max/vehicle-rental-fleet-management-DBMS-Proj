@@ -8,7 +8,7 @@ const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await client.connect();
 try {
   await client.query(run("schema.sql"));   // simple-query protocol => several statements per call
-  console.log("✔ schema applied");
+  console.log("schema applied");
   await client.query(run("rbac.sql"));
-  console.log("✔ roles and row-level security applied");
+  console.log("roles and row-level security applied");
 } finally { await client.end(); }

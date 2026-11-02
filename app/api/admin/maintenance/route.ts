@@ -15,5 +15,6 @@ export const POST = route(async (req) => {
      VALUES ($1,$2,$3,$4,$5,$6,$7)`,
     [m.vehicleId, m.serviceType, m.description, m.partsReplaced ?? null, m.cost, m.odometerKm, m.downtimeDays]);
   const { rows } = await query("SELECT vehicle_id, status, odometer_km, last_service_km FROM vehicles WHERE vehicle_id = $1", [m.vehicleId]);
-  return json(rows[0], 201);
+  const v = rows[0];
+  return json({ ...v, dbEffect: `INSERT maintenance_logs: service logged for vehicle ${v.vehicle_id}; trg_after_maintenance set last_service_km to ${v.last_service_km}, vehicle is now ${v.status}.` }, 201);
 });

@@ -2,6 +2,7 @@ import { withTransaction } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import { HttpError, intParam, json, route } from "@/lib/http";
 import { resolveSchema } from "@/lib/validation";
+import { inrExact } from "@/lib/utils";
 
 // Dispute resolution = one transaction: close the dispute AND (optionally) issue the refund payment.
 export const PATCH = route<{ params: { id: string } }>(async (req, { params }) => {
@@ -26,5 +27,6 @@ export const PATCH = route<{ params: { id: string } }>(async (req, { params }) =
       `UPDATE disputes SET status=$1, resolution_note=$2, refund_amount=$3, resolved_by=$4, resolved_at=now() WHERE dispute_id=$5`,
       [b.status, b.note, b.refund, s.userId, id]);
   });
-  return json({ ok: true });
+  return json({ ok: true, dbEffect: `UPDATE disputes: dispute ${id} ${b.status}, ${b.refund > 0
+    ? `refund of ${inrExact(b.refund)} inserted into payments in the same transaction` : "no refund inserted"}.` });
 });

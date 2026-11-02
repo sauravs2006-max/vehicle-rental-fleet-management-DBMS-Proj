@@ -56,5 +56,6 @@ export const POST = route(async (req) => {
     created_at: now,
   };
   const inserted = await db.collection("inspections").insertOne(document);
-  return json({ ...document, _id: inserted.insertedId }, 201);
+  return json({ ...document, _id: inserted.insertedId,
+    dbEffect: `MongoDB insertOne: inspection ${inserted.insertedId} added for vehicle ${body.vehicle_id}, accepted by the $jsonSchema validator.` }, 201);
 });

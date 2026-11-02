@@ -3,4 +3,5 @@
 @tailwind utilities;
 
 :root { color-scheme: dark; }   /* dark date pickers, scrollbars and form controls */
-body { @apply bg-zinc-950 text-zinc-100 antialiased; }
+body { @apply bg-zinc-950 text-sm text-zinc-100 antialiased; }
+h1, h2, h3 { @apply text-base font-semibold; }   /* one heading size everywhere */

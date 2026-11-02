@@ -37,11 +37,13 @@ export const PATCH = route<{ params: { id: string } }>(async (req, { params }) =
   if (!result.matchedCount) throw new HttpError(404, "Inspection not found");
 
   // The damage_reports row in PostgreSQL stores the same severity on its own scale - keep it in step.
+  let dbEffect = `MongoDB updateOne: inspection ${_id} updated.`;
   if (body.severity) {
-    await query("UPDATE damage_reports SET severity = $1 WHERE mongo_inspection_id = $2",
-      [toDamageSeverity(body.severity), _id.toString()]);
+    const severity = toDamageSeverity(body.severity);
+    const { rowCount } = await query("UPDATE damage_reports SET severity = $1 WHERE mongo_inspection_id = $2", [severity, _id.toString()]);
+    dbEffect += ` PostgreSQL: ${rowCount} damage_reports row(s) set to ${severity}.`;
   }
-  return json({ ok: true, inspection: await db.collection("inspections").findOne({ _id }) });
+  return json({ ok: true, inspection: await db.collection("inspections").findOne({ _id }), dbEffect });
 });
 
 export const DELETE = route<{ params: { id: string } }>(async (_req, { params }) => {
@@ -53,7 +55,8 @@ export const DELETE = route<{ params: { id: string } }>(async (_req, { params })
   }
   // Clear the pointer in PostgreSQL first, so no row ever points at a deleted document.
   // If the Mongo delete then fails, the document is still there and nothing is lost.
-  await query("UPDATE damage_reports SET mongo_inspection_id = NULL WHERE mongo_inspection_id = $1", [_id.toString()]);
+  const { rowCount } = await query("UPDATE damage_reports SET mongo_inspection_id = NULL WHERE mongo_inspection_id = $1", [_id.toString()]);
   await db.collection("inspections").deleteOne({ _id });
-  return json({ ok: true, deletedId: _id.toString() });
+  return json({ ok: true, deletedId: _id.toString(),
+    dbEffect: `MongoDB deleteOne: inspection ${_id} removed. PostgreSQL: ${rowCount} damage_reports pointer(s) cleared.` });
 });

@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Button, Input, Label, Modal, Notice, Select } from "@/components/ui";
-import { inr } from "@/lib/utils";
 
 const PRESETS = ["Driver unavailable", "Vehicle unavailable", "Vehicle needs urgent repair", "Other"];
 
@@ -23,15 +22,15 @@ export default function RejectBookingModal({ booking, onClose, onDone }:
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) });
     const j = await r.json().catch(() => ({})); setBusy(false);
     if (!r.ok) { setErr(j.details ? Object.values(j.details).flat().join(", ") : j.error ?? "Could not reject the booking"); return; }
-    onDone(`Booking #${booking.booking_id} rejected. ${Number(j.refunded) > 0 ? `${inr(j.refunded)} refunded to the customer.` : "Nothing had been paid."}`);
+    onDone(j.dbEffect);
   }
 
   const who = booking?.customer ?? booking?.customer_name;
   return (
     <Modal open={!!booking} onClose={onClose} title={booking ? `Reject booking #${booking.booking_id}` : ""}>
-      <div className="space-y-3">
-        <p className="text-sm text-zinc-400">
-          {booking?.vehicle}{who ? ` for ${who}` : ""}. The customer is refunded in full, the vehicle and driver become free for those dates, and the reason is shown to the customer.
+      <div className="space-y-4">
+        <p className="text-zinc-400">
+          {booking?.vehicle}{who ? ` for ${who}` : ""}. sp_reject_booking() cancels it and refunds what was paid. The vehicle and driver become free for those dates, and the reason is shown to the customer.
         </p>
         <div><Label>Reason</Label><Select value={preset} onChange={(e) => setPreset(e.target.value)}>{PRESETS.map((p) => <option key={p}>{p}</option>)}</Select></div>
         <div><Label>{preset === "Other" ? "Details (required)" : "Extra details (optional)"}</Label>
@@ -39,7 +38,7 @@ export default function RejectBookingModal({ booking, onClose, onDone }:
         {err && <Notice kind="error">{err}</Notice>}
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={onClose}>Keep booking</Button>
-          <Button variant="danger" onClick={submit} disabled={busy || reason.length < 5}>{busy ? "Rejecting..." : "Reject and refund"}</Button>
+          <Button destructive onClick={submit} disabled={busy || reason.length < 5}>{busy ? "Rejecting..." : "Reject and refund"}</Button>
         </div>
       </div>
     </Modal>

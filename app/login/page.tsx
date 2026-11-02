@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, Input, Label, Notice } from "@/components/ui";
+import { Button, Card, Input, Label, Notice, Source } from "@/components/ui";
 
 export default function LoginPage() {
   const r = useRouter();
@@ -24,8 +24,9 @@ export default function LoginPage() {
   return (
     <div className="mx-auto mt-10 max-w-sm">
       <Card>
-        <h1 className="mb-4 text-xl font-semibold">{mode === "login" ? "Sign in" : "Create customer account"}</h1>
-        <form onSubmit={submit} className="space-y-3">
+        <h1>{mode === "login" ? "Sign in" : "Create customer account"}</h1>
+        <Source>PostgreSQL: users table</Source>
+        <form onSubmit={submit} className="mt-4 space-y-4">
           {mode === "register" && <div><Label>Full name</Label><Input required value={f.fullName} onChange={set("fullName")} /></div>}
           <div><Label>Email</Label><Input type="email" required value={f.email} onChange={set("email")} /></div>
           <div><Label>Password</Label><Input type="password" required value={f.password} onChange={set("password")} /></div>
@@ -36,7 +37,7 @@ export default function LoginPage() {
           {err && <Notice kind="error">{err}</Notice>}
           <Button className="w-full" disabled={busy}>{busy ? "Please wait..." : mode === "login" ? "Sign in" : "Register"}</Button>
         </form>
-        <button className="mt-3 text-sm text-zinc-300 hover:text-white hover:underline" onClick={() => { setMode(mode === "login" ? "register" : "login"); setErr(""); }}>
+        <button className="mt-4 text-zinc-300 hover:text-white hover:underline" onClick={() => { setMode(mode === "login" ? "register" : "login"); setErr(""); }}>
           {mode === "login" ? "New here? Create an account" : "Have an account? Sign in"}
         </button>
       </Card>

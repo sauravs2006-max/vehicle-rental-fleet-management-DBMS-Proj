@@ -1,27 +1,31 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Card, Input, Label, Modal, Notice, Select, Tabs, Textarea } from "@/components/ui";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { Badge, Button, Input, Label, Modal, Notice, Section, Select, Source, Textarea } from "@/components/ui";
+import { useAdminTab } from "@/components/AdminTabs";
 import RejectBookingModal from "@/components/RejectBookingModal";
-import { d, dt, inr } from "@/lib/utils";
+import { cn, d, dt, inr } from "@/lib/utils";
 
-type Tab = "overview" | "bookings" | "fleet" | "inspections" | "analytics";
-const TABS: { id: Tab; label: string }[] = [
-  { id: "overview", label: "Overview" }, { id: "bookings", label: "Bookings" }, { id: "fleet", label: "Fleet" },
-  { id: "inspections", label: "Inspections" }, { id: "analytics", label: "Analytics" },
-];
-
-const Table = ({ head, children }: { head: string[]; children: React.ReactNode }) => (
-  <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-    <thead className="border-b text-xs uppercase text-zinc-400"><tr>{head.map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}</tr></thead>
+const Table = ({ head, right = [], children }: { head: string[]; right?: string[]; children: React.ReactNode }) => (
+  <div className="overflow-x-auto"><table className="w-full text-left [&_td]:p-2 [&_th]:p-2">
+    <thead className="border-b text-xs text-zinc-400"><tr>{head.map((h) => <th key={h} className={cn("font-medium", right.includes(h) && "text-right")}>{h}</th>)}</tr></thead>
     <tbody className="divide-y">{children}</tbody></table></div>
 );
-const Kpi = ({ label, value, warn }: { label: string; value: string | number; warn?: boolean }) => (
-  <Card><div className="text-xs text-zinc-400">{label}</div><div className={`text-2xl font-bold ${warn ? "text-amber-400" : ""}`}>{value}</div></Card>
+/** A numeric table cell (its heading goes in the Table's `right` list). */
+const Num = ({ children }: { children: React.ReactNode }) => <td className="text-right tabular-nums">{children}</td>;
+const Kpi = ({ label, value }: { label: string; value: string | number }) => (
+  <div><div className="text-xs text-zinc-400">{label}</div><div className="text-base font-semibold tabular-nums">{value}</div></div>
 );
-const Empty = ({ children }: { children: React.ReactNode }) => <p className="text-sm text-zinc-500">{children}</p>;
+const Empty = ({ children }: { children: React.ReactNode }) => <p className="text-zinc-500">{children}</p>;
 const errText = (j: any) => (j?.details ? Object.values(j.details).flat().join(", ") : j?.error ?? "Something went wrong");
 const plusYear = () => { const x = new Date(); x.setFullYear(x.getFullYear() + 1); return x.toISOString().slice(0, 10); };
 const photoList = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
+const isNumeric = (v: any) => v === null || v === undefined || typeof v === "number" || (typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v));
+/** The analytics endpoint returns one row per branch per day; the Overview shows the totals per branch. */
+const perBranch = (rows: any[]) => Object.values(rows.reduce((acc: Record<number, { branch: string; bookings: number; revenue: number }>, r) => {
+  const x = (acc[r.branch_id] ??= { branch: r.branch, bookings: 0, revenue: 0 });
+  x.bookings += r.bookings; x.revenue += Number(r.net_revenue);
+  return acc;
+}, {}));
 
 const newVehicle = () => ({ branchId: "", regNo: "", make: "", model: "", category: "Hatchback", fuelType: "Petrol", seats: 5,
   dailyRate: 2000, perKmRate: 10, odometerKm: 0, serviceIntervalKm: 10000, registrationExpiry: plusYear(), insuranceExpiry: plusYear(), pucExpiry: plusYear() });
@@ -29,17 +33,24 @@ const newVehicle = () => ({ branchId: "", regNo: "", make: "", model: "", catego
 function ResultTable({ rows }: { rows: any[] }) {
   if (!rows.length) return <Empty>The query returned no rows.</Empty>;
   const cols = Object.keys(rows[0]);
+  const label = (c: string) => c.replace(/_/g, " ");
+  const numeric = cols.filter((c) => rows.every((r) => isNumeric(r[c])));
   const fmt = (v: any) => (v === null || v === undefined ? "-" : typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v) ? d(v) : String(v));
   return (
-    <div className="max-h-96 overflow-auto"><Table head={cols.map((c) => c.replace(/_/g, " "))}>
-      {rows.map((r, i) => <tr key={i}>{cols.map((c) => <td key={c} className="px-2 py-1.5">{fmt(r[c])}</td>)}</tr>)}
+    <div className="max-h-96 overflow-auto"><Table head={cols.map(label)} right={numeric.map(label)}>
+      {rows.map((r, i) => <tr key={i}>{cols.map((c) => numeric.includes(c) ? <Num key={c}>{fmt(r[c])}</Num> : <td key={c}>{fmt(r[c])}</td>)}</tr>)}
     </Table></div>
   );
 }
 
-export default function AdminDashboard() {
-  const [tab, setTab] = useState<Tab>("overview");
+export default function AdminPage() {
+  return <Suspense fallback={<p className="text-zinc-400">Loading dashboard...</p>}><AdminDashboard /></Suspense>;
+}
+
+function AdminDashboard() {
+  const tab = useAdminTab();
   const [data, setData] = useState<any>(null);
+  const [branchWeek, setBranchWeek] = useState<any[] | null>(null);
   const [err, setErr] = useState("");
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -76,21 +87,27 @@ export default function AdminDashboard() {
     const r = await fetch("/api/admin/dashboard"); const j = await r.json();
     if (!r.ok) setErr(j.error); else setData(j);
   }, []);
+  const loadBranchWeek = useCallback(async () => {
+    const r = await fetch("/api/admin/analytics/branch-daily-availability-revenue?days=7"); const j = await r.json();
+    setBranchWeek(r.ok ? perBranch(j.rows) : null);
+  }, []);
   const loadInspections = useCallback(async () => {
     try { const r = await fetch("/api/admin/inspections"); const j = await r.json(); if (r.ok) setInspections(j); }
     catch { /* the rest of the dashboard still works if MongoDB is down */ }
   }, []);
-  const reloadAll = useCallback(async () => { await load(); await loadInspections(); }, [load, loadInspections]);
+  const reloadAll = useCallback(async () => { await load(); await Promise.all([loadBranchWeek(), loadInspections()]); }, [load, loadBranchWeek, loadInspections]);
   useEffect(() => { reloadAll(); fetch("/api/branches").then((r) => r.json()).then(setBranches).catch(() => {}); }, [reloadAll]);
+  useEffect(() => setNote(null), [tab]);
   useEffect(() => {
     if (tab === "analytics" && !reports.length) fetch("/api/admin/reports").then((r) => r.json()).then((j) => Array.isArray(j) && setReports(j));
   }, [tab, reports.length]);
 
   const say = (ok: boolean, text: string) => setNote({ ok, text });
+  // On success the note is the API's own account of what the database did.
   async function call(url: string, method: string, body: unknown) {
     const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const j = await r.json().catch(() => ({}));
-    say(r.ok, r.ok ? "Done" : errText(j));
+    say(r.ok, r.ok ? j.dbEffect : errText(j));
     if (r.ok) await reloadAll();
     return { ok: r.ok, j };
   }
@@ -103,8 +120,8 @@ export default function AdminDashboard() {
   }
 
   async function doReturn() {
-    const { ok, j } = await call(`/api/bookings/${ret.booking_id}/return`, "POST", { actualKm: Number(rf.actualKm), severity: rf.severity, notes: rf.notes });
-    if (ok) { say(true, `Returned. Final fare ${inr(j.total_fare)}. Vehicle is now ${j.vehicle_status.replace(/_/g, " ")}. Payments: ${(j.payments ?? []).map((p: any) => `${p.kind} ${inr(p.amount)}`).join(", ")}`); setRet(null); }
+    const { ok } = await call(`/api/bookings/${ret.booking_id}/return`, "POST", { actualKm: Number(rf.actualKm), severity: rf.severity, notes: rf.notes });
+    if (ok) setRet(null);
   }
   async function doResolve() {
     const { ok } = await call(`/api/admin/disputes/${res.dispute_id}`, "PATCH", { status: rs.status, note: rs.note, refund: Number(rs.refund) });
@@ -115,14 +132,14 @@ export default function AdminDashboard() {
     setBusy(true);
     const { ok } = await call("/api/admin/vehicles", "POST", { ...vf, branchId: Number(vf.branchId) });
     setBusy(false);
-    if (ok) { say(true, `Vehicle ${vf.regNo.toUpperCase()} added to the fleet.`); setAddOpen(false); setVf(newVehicle()); }
+    if (ok) { setAddOpen(false); setVf(newVehicle()); }
   }
   async function logService() {
     setBusy(true);
-    const { ok, j } = await call("/api/admin/maintenance", "POST", {
+    const { ok } = await call("/api/admin/maintenance", "POST", {
       vehicleId: svc.vehicle_id, ...sf, partsReplaced: sf.partsReplaced || undefined, cost: Number(sf.cost), odometerKm: Number(sf.odometerKm), downtimeDays: Number(sf.downtimeDays) });
     setBusy(false);
-    if (ok) { say(true, `Service logged. A trigger reset the service counter; ${svc.vehicle} is now ${String(j.status).replace(/_/g, " ")}.`); setSvc(null); }
+    if (ok) setSvc(null);
   }
   async function saveVehicle() {
     const body: any = {};
@@ -130,12 +147,11 @@ export default function AdminDashboard() {
     if (ef.dailyRate) body.dailyRate = Number(ef.dailyRate);
     if (ef.perKmRate) body.perKmRate = Number(ef.perKmRate);
     const { ok } = await call(`/api/admin/vehicles/${edit.vehicle_id}`, "PATCH", body);
-    if (ok) { say(true, `${edit.vehicle} updated.`); setEdit(null); }
+    if (ok) setEdit(null);
   }
   async function removeVehicle(u: any) {
     if (!window.confirm(`Remove ${u.vehicle} (${u.reg_no}) from the fleet?`)) return;
-    const { ok } = await call(`/api/admin/vehicles/${u.vehicle_id}`, "DELETE", {});
-    if (ok) say(true, `${u.vehicle} removed.`);
+    await call(`/api/admin/vehicles/${u.vehicle_id}`, "DELETE", {});
   }
 
   async function saveInspection() {
@@ -143,7 +159,7 @@ export default function AdminDashboard() {
     const { ok } = await call(`/api/admin/inspections/${encodeURIComponent(inspectionEdit._id)}`, "PATCH",
       { notes: inspectionForm.notes, severity: inspectionForm.severity, photo_references: photoList(inspectionForm.photoReferences) });
     setBusy(false);
-    if (ok) { say(true, "Inspection updated"); setInspectionEdit(null); }
+    if (ok) setInspectionEdit(null);
   }
   async function createInspection() {
     setBusy(true);
@@ -152,222 +168,189 @@ export default function AdminDashboard() {
     if (inspectionCreateForm.bookingId.trim()) payload.booking_id = Number(inspectionCreateForm.bookingId);
     const { ok } = await call("/api/admin/inspections", "POST", payload);
     setBusy(false);
-    if (ok) { say(true, "Inspection created"); setInspectionCreateOpen(false); setInspectionCreateForm({ vehicleId: "", bookingId: "", notes: "", severity: "Low", photoReferences: "" }); }
+    if (ok) { setInspectionCreateOpen(false); setInspectionCreateForm({ vehicleId: "", bookingId: "", notes: "", severity: "Low", photoReferences: "" }); }
   }
   async function deleteInspection(item: any) {
     if (!window.confirm("Delete this inspection? Any damage-report pointer to it in PostgreSQL will be cleared.")) return;
-    const { ok } = await call(`/api/admin/inspections/${encodeURIComponent(item._id)}`, "DELETE", {});
-    if (ok) say(true, "Inspection deleted");
+    await call(`/api/admin/inspections/${encodeURIComponent(item._id)}`, "DELETE", {});
   }
 
-  if (err) return <p className="text-red-400">{err}</p>;
+  if (err) return <Notice kind="error">{err}</Notice>;
   if (!data) return <p className="text-zinc-400">Loading dashboard...</p>;
   const k = data.kpis;
   const names: Record<number, string> = Object.fromEntries(data.utilization.map((u: any) => [u.vehicle_id, `${u.vehicle} (${u.reg_no})`]));
   const setV = (key: string) => (e: React.ChangeEvent<any>) => setVf({ ...vf, [key]: e.target.value });
-  const attention = [
-    { label: "Upcoming bookings", n: Number(k.upcoming), tab: "bookings" as Tab, hint: "Assign a chauffeur, or reject if something has changed" },
-    { label: "Open disputes", n: data.disputes.length, tab: "bookings" as Tab, hint: "Customer complaints waiting for a decision" },
-    { label: "Vehicles due for service", n: data.alerts.length, tab: "fleet" as Tab, hint: "Over or close to their service interval" },
-    { label: "Documents expiring within 30 days", n: data.expiring.length, tab: "fleet" as Tab, hint: "Registration, insurance, PUC and driving licences" },
-  ];
+  const reportButton = (active: boolean) => cn("w-full p-2 text-left", active ? "font-semibold text-zinc-100" : "text-zinc-400 hover:text-zinc-200");
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Fleet dashboard</h1>
-        <Button variant="outline" size="sm" onClick={reloadAll}>Refresh</Button>
-      </div>
-      <Tabs tabs={TABS} value={tab} onChange={(t) => { setTab(t); setNote(null); }} />
-      {note && <Notice kind={note.ok ? "ok" : "error"}>{note.text}</Notice>}
+    <div>
+      {/* Sticky and above the dialog overlay, so the result of an action is always in view. */}
+      {note && <div className="sticky top-0 z-[60]"><Notice kind={note.ok ? "ok" : "error"}>{note.text}</Notice></div>}
 
       {/* ---------------------------------------------------------------- Overview */}
       {tab === "overview" && (
-        <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-            <Kpi label="Net revenue" value={inr(k.revenue)} /><Kpi label="Fleet size" value={k.fleet_size} />
-            <Kpi label="Active rentals" value={k.active_rentals} /><Kpi label="Upcoming" value={k.upcoming} />
-            <Kpi label="Open disputes" value={k.open_disputes} warn={Number(k.open_disputes) > 0} />
-          </div>
-          <Card>
-            <h2 className="mb-3 font-semibold">Needs attention</h2>
-            <div className="divide-y">
-              {attention.map((a) => (
-                <div key={a.label} className="flex items-center justify-between gap-3 py-2.5">
-                  <div><div className="text-sm">{a.label}</div><div className="text-xs text-zinc-500">{a.hint}</div></div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-xl font-bold ${a.n > 0 ? "text-amber-400" : "text-zinc-500"}`}>{a.n}</span>
-                    <Button size="sm" variant="outline" onClick={() => setTab(a.tab)}>Open</Button>
-                  </div>
-                </div>
-              ))}
+        <>
+          <Section title="Summary" source="PostgreSQL: scalar subqueries over payments, vehicles, bookings and disputes">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+              <Kpi label="Net revenue" value={inr(k.revenue)} /><Kpi label="Fleet size" value={k.fleet_size} />
+              <Kpi label="Active rentals" value={k.active_rentals} /><Kpi label="Upcoming" value={k.upcoming} />
+              <Kpi label="Open disputes" value={k.open_disputes} />
             </div>
-          </Card>
-          <Card>
-            <h2 className="mb-2 font-semibold">Fleet status</h2>
-            <div className="flex flex-wrap gap-4">{data.statusCounts.map((s: any) =>
-              <span key={s.status} className="flex items-center gap-1.5 text-sm"><Badge>{s.status}</Badge><span className="text-zinc-400">{s.count}</span></span>)}</div>
-          </Card>
-        </div>
+          </Section>
+          <Section title="Last 7 days by branch" source="PostgreSQL: CTE with generate_series. Bookings: created in the window, not cancelled. Revenue: paid in the window, net of refunds.">
+            {branchWeek ? <Table head={["Branch", "Bookings", "Revenue"]} right={["Bookings", "Revenue"]}>
+              {branchWeek.map((b: any) => <tr key={b.branch}><td>{b.branch}</td><Num>{b.bookings}</Num><Num>{inr(b.revenue)}</Num></tr>)}
+            </Table> : <Empty>Could not load the branch figures.</Empty>}
+          </Section>
+        </>
       )}
 
       {/* ---------------------------------------------------------------- Bookings */}
       {tab === "bookings" && (
-        <div className="space-y-5">
-          <Card>
-            <h2 className="font-semibold">Active and upcoming bookings</h2>
-            <p className="mb-3 text-xs text-zinc-500">Rejecting an upcoming booking refunds the customer in full and frees the vehicle and chauffeur for those dates.</p>
+        <>
+          <Section title="Active and upcoming bookings" source="PostgreSQL: bookings joined to users, vehicles and drivers">
             {data.openBookings.length ? (
-              <Table head={["#", "Customer", "Vehicle", "Period", "Status", "Chauffeur", "Actions"]}>
+              <Table head={["#", "Customer", "Vehicle", "Period", "Status", "Assign chauffeur", "Actions"]} right={["#"]}>
                 {data.openBookings.map((b: any) => (
                   <tr key={b.booking_id}>
-                    <td className="px-2 py-1.5">{b.booking_id}</td><td className="px-2">{b.customer}</td><td className="px-2">{b.vehicle}</td>
-                    <td className="px-2 text-xs">{dt(b.start_ts)} → {dt(b.end_ts)}</td><td className="px-2"><Badge>{b.status}</Badge></td>
-                    <td className="px-2"><Select value={b.driver_id ?? ""} className="py-1 text-xs"
+                    <Num>{b.booking_id}</Num><td>{b.customer}</td><td>{b.vehicle}</td>
+                    <td className="text-xs">{dt(b.start_ts)} to {dt(b.end_ts)}</td><td><Badge>{b.status}</Badge></td>
+                    <td><Select value={b.driver_id ?? ""} aria-label={`Assign chauffeur to booking ${b.booking_id}`}
                       onChange={(e) => call(`/api/admin/bookings/${b.booking_id}/driver`, "PATCH", { driverId: e.target.value ? Number(e.target.value) : null })}>
                       <option value="">Self-drive</option>{data.drivers.filter((x: any) => x.is_active).map((x: any) => <option key={x.driver_id} value={x.driver_id}>{x.full_name}</option>)}</Select></td>
-                    <td className="px-2"><div className="flex gap-1">
-                      <Button size="sm" onClick={() => { setRet(b); setRf({ actualKm: 120, severity: "None", notes: "" }); }}>Check in</Button>
-                      {b.status === "Confirmed" && <Button size="sm" variant="outline" onClick={() => setReject(b)}>Reject</Button>}
-                    </div></td>
+                    <td>
+                      {b.status === "Active" && <Button onClick={() => { setRet(b); setRf({ actualKm: 120, severity: "None", notes: "" }); }}>Check in</Button>}
+                      {b.status === "Confirmed" && <Button variant="outline" destructive onClick={() => setReject(b)}>Reject</Button>}
+                    </td>
                   </tr>))}
               </Table>
             ) : <Empty>No active or upcoming bookings.</Empty>}
-          </Card>
-          <Card>
-            <h2 className="mb-2 font-semibold">Open disputes</h2>
-            {data.disputes.length ? data.disputes.map((x: any) => (
-              <div key={x.dispute_id} className="mb-2 rounded-md border p-3 text-sm">
-                <div className="flex justify-between"><b>#{x.booking_id} · {x.customer}</b><span>{inr(x.total_fare)}</span></div>
-                <p className="my-1 text-zinc-400">{x.reason}</p>
-                <Button size="sm" variant="outline" onClick={() => { setRes(x); setRs({ status: "Resolved", note: "", refund: 0 }); }}>Resolve</Button></div>))
-              : <Empty>No open disputes.</Empty>}
-          </Card>
-        </div>
+          </Section>
+          <Section title="Open disputes" source="PostgreSQL: disputes joined to users and bookings">
+            {data.disputes.length ? (
+              <Table head={["Booking", "Customer", "Reason", "Fare", "Actions"]} right={["Booking", "Fare"]}>
+                {data.disputes.map((x: any) => (
+                  <tr key={x.dispute_id}>
+                    <Num>{x.booking_id}</Num><td>{x.customer}</td><td className="text-zinc-400">{x.reason}</td><Num>{inr(x.total_fare)}</Num>
+                    <td><Button variant="outline" onClick={() => { setRes(x); setRs({ status: "Resolved", note: "", refund: 0 }); }}>Resolve</Button></td>
+                  </tr>))}
+              </Table>
+            ) : <Empty>No open disputes.</Empty>}
+          </Section>
+        </>
       )}
 
       {/* ---------------------------------------------------------------- Fleet */}
       {tab === "fleet" && (
-        <div className="space-y-5">
-          <Card>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div><h2 className="font-semibold">Vehicles</h2><p className="text-xs text-zinc-500">View v_fleet_utilization, 90-day window</p></div>
-              <Button size="sm" onClick={() => setAddOpen(true)}>Add vehicle</Button>
-            </div>
-            <Table head={["Vehicle", "Branch", "Status", "Rentals", "Utilization", "Revenue", "Odometer", "Actions"]}>
+        <>
+          <Section title="Vehicles" source="PostgreSQL: view v_fleet_utilization, 90-day window" action={<Button onClick={() => setAddOpen(true)}>Add vehicle</Button>}>
+            <Table head={["Vehicle", "Branch", "Status", "Rentals", "Utilization", "Revenue", "Odometer", "Actions"]} right={["Rentals", "Utilization", "Revenue", "Odometer"]}>
               {data.utilization.map((u: any) => (
                 <tr key={u.vehicle_id}>
-                  <td className="px-2 py-1.5">{u.vehicle} <span className="text-xs text-zinc-500">{u.reg_no}</span></td><td className="px-2">{u.branch}</td>
-                  <td className="px-2"><Badge>{u.status}</Badge></td><td className="px-2">{u.rental_count}</td>
-                  <td className="px-2"><div className="h-1.5 w-20 rounded bg-zinc-800"><div className="h-1.5 rounded bg-emerald-500" style={{ width: `${u.utilization_pct}%` }} /></div><span className="text-xs text-zinc-400">{u.utilization_pct}%</span></td>
-                  <td className="px-2">{inr(u.total_revenue)}</td><td className="px-2">{Number(u.odometer_km).toLocaleString("en-IN")} km</td>
-                  <td className="px-2"><div className="flex gap-1">
-                    <Button size="sm" variant="outline" onClick={() => { setSvc(u); setSf({ serviceType: "Scheduled", description: "", partsReplaced: "", cost: 0, odometerKm: Number(u.odometer_km), downtimeDays: 0 }); }}>Service</Button>
-                    <Button size="sm" variant="ghost" onClick={() => { setEdit(u); setEf({ status: "", dailyRate: "", perKmRate: "" }); }}>Edit</Button>
-                    <Button size="sm" variant="ghost" onClick={() => removeVehicle(u)}>Remove</Button>
+                  <td>{u.vehicle} <span className="text-xs text-zinc-500">{u.reg_no}</span></td><td>{u.branch}</td>
+                  <td><Badge>{u.status}</Badge></td><Num>{u.rental_count}</Num><Num>{u.utilization_pct}%</Num>
+                  <Num>{inr(u.total_revenue)}</Num><Num>{Number(u.odometer_km).toLocaleString("en-IN")} km</Num>
+                  <td><div className="flex gap-2">
+                    <Button variant="outline" onClick={() => { setSvc(u); setSf({ serviceType: "Scheduled", description: "", partsReplaced: "", cost: 0, odometerKm: Number(u.odometer_km), downtimeDays: 0 }); }}>Service</Button>
+                    <Button variant="outline" onClick={() => { setEdit(u); setEf({ status: "", dailyRate: "", perKmRate: "" }); }}>Edit</Button>
+                    <Button variant="outline" destructive onClick={() => removeVehicle(u)}>Remove</Button>
                   </div></td>
                 </tr>))}
             </Table>
-          </Card>
-          <div className="grid gap-5 md:grid-cols-2">
-            <Card><h2 className="mb-2 font-semibold">Maintenance alerts</h2>
-              {data.alerts.length ? <Table head={["Vehicle", "Status", "Km to service"]}>{data.alerts.map((a: any) => (
-                <tr key={a.vehicle_id}><td className="px-2 py-1.5">{a.vehicle} <span className="text-xs text-zinc-500">{a.reg_no}</span></td><td className="px-2"><Badge>{a.status}</Badge></td>
-                  <td className={`px-2 ${a.km_to_service <= 0 ? "font-semibold text-red-400" : ""}`}>{a.km_to_service <= 0 ? `${-a.km_to_service} overdue` : a.km_to_service}</td></tr>))}</Table>
-                : <Empty>All vehicles are within their service intervals.</Empty>}</Card>
-            <Card><h2 className="mb-2 font-semibold">Documents expiring within 30 days</h2>
-              {data.expiring.length ? <Table head={["Owner", "Document", "Expires", "Days"]}>{data.expiring.map((e: any, i: number) => (
-                <tr key={i}><td className="px-2 py-1.5">{e.owner_ref}</td><td className="px-2">{e.doc_type}</td><td className="px-2">{d(e.expiry_date)}</td>
-                  <td className={`px-2 ${e.days_left < 0 ? "font-semibold text-red-400" : e.days_left <= 14 ? "text-amber-400" : ""}`}>{e.days_left < 0 ? "expired" : e.days_left}</td></tr>))}</Table>
-                : <Empty>Nothing expiring soon.</Empty>}</Card>
-          </div>
-          <Card><h2 className="mb-2 font-semibold">Chauffeurs</h2>
-            <Table head={["Driver", "Licence expiry", "Trips", "Rating"]}>{data.drivers.map((x: any) => (
-              <tr key={x.driver_id}><td className="px-2 py-1.5">{x.full_name}</td><td className="px-2">{d(x.license_expiry)}</td><td className="px-2">{x.trips_completed}</td><td className="px-2">{x.avg_rating ?? "-"}</td></tr>))}</Table></Card>
-        </div>
+          </Section>
+          <Section title="Maintenance alerts" source="PostgreSQL: view v_maintenance_alerts">
+            {data.alerts.length ? <Table head={["Vehicle", "Status", "Km to service"]} right={["Km to service"]}>{data.alerts.map((a: any) => (
+              <tr key={a.vehicle_id}><td>{a.vehicle} <span className="text-xs text-zinc-500">{a.reg_no}</span></td><td><Badge>{a.status}</Badge></td>
+                <Num>{a.km_to_service <= 0 ? `${-a.km_to_service} overdue` : a.km_to_service}</Num></tr>))}</Table>
+              : <Empty>All vehicles are within their service intervals.</Empty>}
+          </Section>
+          <Section title="Documents expiring within 30 days" source="PostgreSQL: view v_expiring_documents">
+            {data.expiring.length ? <Table head={["Owner", "Document", "Expires", "Days"]} right={["Days"]}>{data.expiring.map((e: any, i: number) => (
+              <tr key={i}><td>{e.owner_ref}</td><td>{e.doc_type}</td><td>{d(e.expiry_date)}</td><Num>{e.days_left < 0 ? "expired" : e.days_left}</Num></tr>))}</Table>
+              : <Empty>Nothing expiring soon.</Empty>}
+          </Section>
+          <Section title="Chauffeurs" source="PostgreSQL: view v_driver_performance">
+            <Table head={["Driver", "Licence expiry", "Trips", "Rating"]} right={["Trips", "Rating"]}>{data.drivers.map((x: any) => (
+              <tr key={x.driver_id}><td>{x.full_name}</td><td>{d(x.license_expiry)}</td><Num>{x.trips_completed}</Num><Num>{x.avg_rating ?? "-"}</Num></tr>))}</Table>
+          </Section>
+        </>
       )}
 
       {/* ---------------------------------------------------------------- Inspections (MongoDB) */}
       {tab === "inspections" && (
-        <Card>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div><h2 className="font-semibold">Inspection reports</h2>
-              <p className="text-xs text-zinc-500">MongoDB documents. Create, read, update and delete them here; check-in also creates one automatically.</p></div>
-            <Button size="sm" onClick={() => setInspectionCreateOpen(true)}>Add inspection</Button>
-          </div>
-          {inspections.length ? <Table head={["Date", "Vehicle", "Stage", "Severity", "Notes", "Photos", "Actions"]}>
+        <Section title="Inspection reports" source="MongoDB: inspections collection, latest 50 documents. Check-in also creates one."
+          action={<Button onClick={() => setInspectionCreateOpen(true)}>Add inspection</Button>}>
+          {inspections.length ? <Table head={["Date", "Vehicle", "Stage", "Severity", "Notes", "Photos", "Actions"]} right={["Vehicle", "Photos"]}>
             {inspections.map((item: any) => (
               <tr key={item._id}>
-                <td className="px-2 py-2 text-xs">{d(item.inspection_date ?? item.created_at)}</td>
-                <td className="px-2">{item.vehicle_id ?? "-"}</td>
-                <td className="px-2">{item.stage ?? item.status ?? "-"}</td>
-                <td className="px-2"><Badge>{String(item.severity ?? "Low")}</Badge></td>
-                <td className="max-w-56 px-2 py-2">{item.notes || "-"}</td>
-                <td className="px-2">{(item.photo_references ?? []).length}</td>
-                <td className="px-2 py-2"><div className="flex gap-1">
-                  <Button size="sm" variant="outline" onClick={() => { setInspectionEdit(item);
+                <td className="text-xs">{d(item.inspection_date ?? item.created_at)}</td>
+                <Num>{item.vehicle_id ?? "-"}</Num>
+                <td>{item.stage ?? item.status ?? "-"}</td>
+                <td><Badge>{String(item.severity ?? "Low")}</Badge></td>
+                <td className="max-w-56">{item.notes || "-"}</td>
+                <Num>{(item.photo_references ?? []).length}</Num>
+                <td><div className="flex gap-2">
+                  <Button variant="outline" onClick={() => { setInspectionEdit(item);
                     setInspectionForm({ notes: item.notes ?? "", severity: item.severity ?? "Low", photoReferences: (item.photo_references ?? []).join("\n") }); }}>Edit</Button>
-                  <Button size="sm" variant="ghost" onClick={() => deleteInspection(item)}>Delete</Button>
+                  <Button variant="outline" destructive onClick={() => deleteInspection(item)}>Delete</Button>
                 </div></td>
               </tr>))}
           </Table> : <Empty>No inspections loaded. Make sure MongoDB is running, then refresh.</Empty>}
-        </Card>
+        </Section>
       )}
 
       {/* ---------------------------------------------------------------- Analytics */}
       {tab === "analytics" && (
-        <div className="grid gap-5 md:grid-cols-[17rem_1fr]">
-          <Card className="h-fit p-2">
-            <button onClick={() => chooseReport("telematics")}
-              className={`w-full rounded-md px-3 py-2 text-left text-sm ${selected === "telematics" ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:bg-zinc-800/60"}`}>
-              Vehicle telematics<div className="text-xs text-zinc-500">MongoDB aggregation</div></button>
+        <div className="grid gap-4 py-4 md:grid-cols-[16rem_1fr]">
+          <div className="h-fit divide-y border-b md:border-b-0 md:border-r">
+            <button onClick={() => chooseReport("telematics")} className={reportButton(selected === "telematics")}>
+              Vehicle telematics<div className="text-xs font-normal text-zinc-500">MongoDB: aggregation pipeline</div></button>
             {reports.map((r) => (
-              <button key={r.id} onClick={() => chooseReport(r.id)}
-                className={`w-full rounded-md px-3 py-2 text-left text-sm ${selected === r.id ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:bg-zinc-800/60"}`}>
-                {r.title}<div className="text-xs text-zinc-500">{r.technique}</div></button>
+              <button key={r.id} onClick={() => chooseReport(r.id)} className={reportButton(selected === r.id)}>
+                {r.title}<div className="text-xs font-normal text-zinc-500">PostgreSQL: {r.technique}</div></button>
             ))}
-          </Card>
-          <Card>
+          </div>
+          <div className="min-w-0 space-y-2">
             {selected === "telematics" ? (
               <>
-                <h2 className="font-semibold">Vehicle telematics</h2>
-                <p className="mb-3 text-xs text-zinc-500">MongoDB aggregation pipeline over the last 30 days of readings</p>
-                {data.telematics ? <Table head={["Vehicle", "Distance", "Fuel / energy", "km/L", "Avg speed", "Harsh events /100 km", "Driving score"]}>
+                <div><h2>Vehicle telematics</h2>
+                  <Source>MongoDB: aggregation pipeline over the last 30 days of telematics readings (lib/analytics.ts)</Source></div>
+                {data.telematics ? <Table head={["Vehicle", "Distance", "Fuel / energy", "km/L", "Avg speed", "Harsh events /100 km", "Driving score"]}
+                  right={["Distance", "Fuel / energy", "km/L", "Avg speed", "Harsh events /100 km", "Driving score"]}>
                   {data.telematics.map((t: any) => (
-                    <tr key={t.vehicle_id}><td className="px-2 py-1.5">{names[t.vehicle_id] ?? `#${t.vehicle_id}`}</td><td className="px-2">{t.distance_km} km</td>
-                      <td className="px-2">{t.fuel_litres > 0 ? `${t.fuel_litres} L` : `${t.energy_kwh} kWh`}</td><td className="px-2">{t.km_per_litre ?? "-"}</td>
-                      <td className="px-2">{t.avg_speed} km/h</td><td className="px-2">{t.harsh_events_per_100km}</td>
-                      <td className={`px-2 font-semibold ${t.driving_score < 70 ? "text-red-400" : "text-emerald-400"}`}>{t.driving_score}</td></tr>))}</Table>
+                    <tr key={t.vehicle_id}><td>{names[t.vehicle_id] ?? `#${t.vehicle_id}`}</td><Num>{t.distance_km} km</Num>
+                      <Num>{t.fuel_litres > 0 ? `${t.fuel_litres} L` : `${t.energy_kwh} kWh`}</Num><Num>{t.km_per_litre ?? "-"}</Num>
+                      <Num>{t.avg_speed} km/h</Num><Num>{t.harsh_events_per_100km}</Num><Num>{t.driving_score}</Num></tr>))}</Table>
                   : <Notice kind="error">MongoDB is not reachable, so telematics is hidden.</Notice>}
               </>
             ) : !result ? <Empty>Loading...</Empty> : result.error ? <Notice kind="error">{result.error}</Notice> : (
               <>
-                <h2 className="font-semibold">{result.title}</h2>
-                <p className="mb-2 text-xs text-zinc-500">{result.technique} · {result.rowCount} row{result.rowCount === 1 ? "" : "s"} · from db/queries.sql (Q{result.id})</p>
-                <pre className="mb-3 max-h-56 overflow-auto rounded-md border bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-300">{result.sql}</pre>
+                <div><h2>{result.title}</h2>
+                  <Source>PostgreSQL: {result.technique} · {result.rowCount} row{result.rowCount === 1 ? "" : "s"} · from db/queries.sql (Q{result.id})</Source></div>
+                <pre className="max-h-56 overflow-auto rounded border p-2 text-xs leading-relaxed text-zinc-300">{result.sql}</pre>
                 <ResultTable rows={result.rows} />
               </>
             )}
-          </Card>
+          </div>
         </div>
       )}
 
       {/* ---------------------------------------------------------------- Dialogs */}
       <RejectBookingModal booking={reject} onClose={() => setReject(null)} onDone={(m) => { setReject(null); say(true, m); reloadAll(); }} />
 
-      <Modal open={!!ret} onClose={() => setRet(null)} title={ret ? `Check in booking #${ret.booking_id}` : ""}>
-        <div className="space-y-3">
+      <Modal open={ret?.status === "Active"} onClose={() => setRet(null)} title={ret ? `Complete return: booking #${ret.booking_id}` : ""}>
+        <div className="space-y-4">
           <div><Label>Actual distance driven (km)</Label><Input type="number" min={0} value={rf.actualKm} onChange={(e) => setRf({ ...rf, actualKm: Number(e.target.value) })} /></div>
           <div><Label>Post-rental damage</Label><Select value={rf.severity} onChange={(e) => setRf({ ...rf, severity: e.target.value })}>
             <option>None</option><option>Minor</option><option>Major</option></Select></div>
           <div><Label>Inspection notes (stored in MongoDB)</Label><Input value={rf.notes} onChange={(e) => setRf({ ...rf, notes: e.target.value })} placeholder="e.g. scratch on rear bumper" /></div>
-          <p className="text-xs text-zinc-500">Return time is now. The late fee or early-return refund is calculated by calc_fare() inside sp_complete_return().</p>
+          <p className="text-xs text-zinc-500">The return time is now. calc_fare() recalculates the fare from the return time and actual distance, and sp_complete_return() inserts any late fee, adjustment or refund into payments.</p>
           <Button className="w-full" onClick={doReturn}>Complete return</Button>
         </div>
       </Modal>
 
       <Modal open={!!res} onClose={() => setRes(null)} title={res ? `Resolve dispute #${res.dispute_id}` : ""}>
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div><Label>Decision</Label><Select value={rs.status} onChange={(e) => setRs({ ...rs, status: e.target.value })}><option>Resolved</option><option>Rejected</option></Select></div>
           <div><Label>Refund (₹)</Label><Input type="number" min={0} value={rs.refund} onChange={(e) => setRs({ ...rs, refund: Number(e.target.value) })} /></div>
           <div><Label>Resolution note</Label><Input value={rs.note} onChange={(e) => setRs({ ...rs, note: e.target.value })} /></div>
@@ -376,7 +359,7 @@ export default function AdminDashboard() {
       </Modal>
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add vehicle">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-4">
           <div className="col-span-2"><Label>Branch</Label><Select value={vf.branchId} onChange={setV("branchId")}><option value="">Select a branch</option>
             {branches.map((b) => <option key={b.branch_id} value={b.branch_id}>{b.name}</option>)}</Select></div>
           <div><Label>Registration no.</Label><Input value={vf.regNo} onChange={setV("regNo")} placeholder="KA01AB1234" /></div>
@@ -398,7 +381,7 @@ export default function AdminDashboard() {
       </Modal>
 
       <Modal open={!!svc} onClose={() => setSvc(null)} title={svc ? `Log service: ${svc.vehicle}` : ""}>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-4">
           <div><Label>Type</Label><Select value={sf.serviceType} onChange={(e) => setSf({ ...sf, serviceType: e.target.value })}>{["Scheduled", "Repair", "Inspection"].map((c) => <option key={c}>{c}</option>)}</Select></div>
           <div><Label>Odometer at service (km)</Label><Input type="number" min={0} value={sf.odometerKm} onChange={(e) => setSf({ ...sf, odometerKm: Number(e.target.value) })} /></div>
           <div className="col-span-2"><Label>Work done</Label><Input value={sf.description} onChange={(e) => setSf({ ...sf, description: e.target.value })} placeholder="e.g. oil change, brake pads" /></div>
@@ -412,11 +395,11 @@ export default function AdminDashboard() {
       </Modal>
 
       <Modal open={!!edit} onClose={() => setEdit(null)} title={edit ? `Edit ${edit.vehicle}` : ""}>
-        <div className="space-y-3">
+        <div className="space-y-4">
           <p className="text-xs text-zinc-500">Leave a field empty to keep its current value. A rented vehicle cannot change status.</p>
           <div><Label>Status</Label><Select value={ef.status} onChange={(e) => setEf({ ...ef, status: e.target.value })}>
             <option value="">Keep current</option><option value="Available">Available</option><option value="Out_of_Service">Out of service</option></Select></div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-4">
             <div><Label>New daily rate (₹)</Label><Input type="number" min={1} value={ef.dailyRate} onChange={(e) => setEf({ ...ef, dailyRate: e.target.value })} /></div>
             <div><Label>New per-km rate (₹)</Label><Input type="number" min={0} value={ef.perKmRate} onChange={(e) => setEf({ ...ef, perKmRate: e.target.value })} /></div>
           </div>
@@ -426,7 +409,7 @@ export default function AdminDashboard() {
       </Modal>
 
       <Modal open={inspectionCreateOpen} onClose={() => setInspectionCreateOpen(false)} title="Add inspection">
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div><Label>Vehicle ID</Label><Input type="number" min={1} value={inspectionCreateForm.vehicleId} onChange={(e) => setInspectionCreateForm({ ...inspectionCreateForm, vehicleId: e.target.value })} /></div>
           <div><Label>Booking ID (optional)</Label><Input type="number" min={1} value={inspectionCreateForm.bookingId} onChange={(e) => setInspectionCreateForm({ ...inspectionCreateForm, bookingId: e.target.value })} /></div>
           <div><Label>Notes</Label><Input value={inspectionCreateForm.notes} maxLength={5000} onChange={(e) => setInspectionCreateForm({ ...inspectionCreateForm, notes: e.target.value })} /></div>
@@ -440,7 +423,7 @@ export default function AdminDashboard() {
       </Modal>
 
       <Modal open={!!inspectionEdit} onClose={() => setInspectionEdit(null)} title="Edit inspection">
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div><Label>Notes</Label><Input value={inspectionForm.notes} maxLength={5000} onChange={(e) => setInspectionForm({ ...inspectionForm, notes: e.target.value })} /></div>
           <div><Label>Severity</Label><Select value={inspectionForm.severity} onChange={(e) => setInspectionForm({ ...inspectionForm, severity: e.target.value })}>
             <option>Low</option><option>Medium</option><option>High</option><option>Critical</option></Select></div>

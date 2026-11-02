@@ -13,5 +13,5 @@ export const POST = route(async (req) => {
   if (open.rowCount) throw new HttpError(409, "A dispute is already open for this booking");
   const { rows } = await query(
     "INSERT INTO disputes (booking_id, raised_by, reason) VALUES ($1,$2,$3) RETURNING dispute_id", [b.bookingId, s.userId, b.reason]);
-  return json(rows[0], 201);
+  return json({ ...rows[0], dbEffect: `INSERT disputes: dispute ${rows[0].dispute_id} opened for booking ${b.bookingId}, status Open.` }, 201);
 });

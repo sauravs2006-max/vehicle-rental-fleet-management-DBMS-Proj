@@ -2,6 +2,7 @@ import { withDbRole, withTransaction } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import { HttpError, json, route } from "@/lib/http";
 import { bookingSchema } from "@/lib/validation";
+import { inrExact } from "@/lib/utils";
 
 // Booking history. Runs under the user's own database role, so the row-level-security
 // policy (not just the WHERE clause below) limits a customer to their own bookings.
@@ -75,5 +76,6 @@ export const POST = route(async (req) => {
     if (startsNow) await c.query("UPDATE vehicles SET status = 'Rented' WHERE vehicle_id = $1", [b.vehicleId]);
     return { booking: bk, fare };
   });
-  return json(result, 201);
+  const { booking_id, status, total_fare } = result.booking;
+  return json({ ...result, dbEffect: `calc_fare() priced booking ${booking_id} at ${inrExact(total_fare)}; bookings and payments rows inserted in one transaction, status ${status}.` }, 201);
 });

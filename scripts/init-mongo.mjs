@@ -41,7 +41,7 @@ try {
     db.collection("inspections").createIndex({ notes: "text" }),
     db.collection("telematics").createIndex({ vehicle_id: 1, ts: -1 }),
   ]);
-  console.log("✔ MongoDB ready: inspections validator + indexes");
+  console.log("MongoDB ready: inspections validator + indexes");
 } finally {
   await client.close();
 }

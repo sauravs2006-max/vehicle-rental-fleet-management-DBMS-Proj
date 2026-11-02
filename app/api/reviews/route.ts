@@ -12,7 +12,7 @@ export const POST = route(async (req) => {
   const { rows } = await query(
     `INSERT INTO reviews (booking_id, user_id, vehicle_id, rating, comment) VALUES ($1,$2,$3,$4,$5) RETURNING review_id`,
     [b.bookingId, s.userId, bk.rows[0].vehicle_id, b.rating, b.comment ?? null]);
-  return json(rows[0], 201);
+  return json({ ...rows[0], dbEffect: `INSERT reviews: review ${rows[0].review_id} saved for booking ${b.bookingId}; trg_review_guard confirmed it is your completed booking.` }, 201);
 });
 
 // Full-text search over review comments (GIN index on the generated tsvector column)

@@ -14,5 +14,6 @@ export const POST = route(async (req) => {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$11,$12,$13,$14) RETURNING vehicle_id, reg_no, status`,
     [v.branchId, v.regNo, v.make, v.model, v.category, v.fuelType, v.seats, v.dailyRate, v.perKmRate,
      v.odometerKm, v.serviceIntervalKm, v.registrationExpiry, v.insuranceExpiry, v.pucExpiry]);
-  return json(rows[0], 201);
+  const r = rows[0];
+  return json({ ...r, dbEffect: `INSERT vehicles: vehicle ${r.vehicle_id} (${r.reg_no}) added, status ${r.status}.` }, 201);
 });

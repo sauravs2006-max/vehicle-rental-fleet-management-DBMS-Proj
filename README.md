@@ -16,13 +16,15 @@ Stack: Next.js (App Router, TypeScript, Tailwind), PostgreSQL 16, MongoDB 7.
 - If an admin rejects an upcoming booking, the reason is shown and the money is refunded.
 
 **Admins**
-- **Overview:** revenue, fleet size, active and upcoming rentals, and a "needs attention" list.
-- **Bookings:** assign a chauffeur, check a vehicle back in (late fees, early-return refunds, damage), reject an upcoming booking, resolve disputes.
+- **Overview:** revenue, fleet size, active and upcoming rentals, and bookings and revenue for the last 7 days per branch.
+- **Bookings:** assign a chauffeur, check an Active booking back in (late fees, early-return refunds, damage), reject an upcoming booking, resolve disputes.
 - **Fleet:** add, edit and remove vehicles, log services, see utilisation, service alerts, expiring documents and chauffeur ratings.
 - **Inspections:** create, edit and delete inspection reports stored in MongoDB.
 - **Analytics:** telematics from a MongoDB aggregation, plus SQL reports that run directly from `db/queries.sql`.
 
 Admins can't write reviews or raise complaints. Customers can't see the admin pages.
+
+Every section says which database it reads from, and every action reports what the database did, using a `dbEffect` line returned by the API.
 
 ## Requirements
 
@@ -90,10 +92,10 @@ npm run dev
 `npm run db:reset` drops and rebuilds everything. It applies the schema, creates the database roles and row-level security policies, sets up the MongoDB collection with its validator and indexes, and loads demo data. A successful run ends with lines like these:
 
 ```
-✔ schema applied
-✔ roles and row-level security applied
-✔ MongoDB ready: inspections validator + indexes
-✔ seeded: 160 completed bookings, 320 inspection docs, 1548 telematics readings
+schema applied
+roles and row-level security applied
+MongoDB ready: inspections validator + indexes
+seeded: 263 completed bookings, 526 inspection docs, 2574 telematics readings
 ```
 
 If it fails with a connection error, PostgreSQL is probably still starting. Wait about ten seconds and run it again.
@@ -155,17 +157,44 @@ npm run typecheck
 
 The SQL tests run inside transactions and roll back, so they don't change the demo data.
 
+### API test notes
+
+**Check-in is refused unless the booking is Active.** `POST /api/bookings/:id/return` must return 422 for a Confirmed booking, and must not leave an inspection behind in MongoDB. With `npm run dev` running on port 3000 and fresh demo data:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/login -ContentType application/json -SessionVariable admin -Body '{"email":"admin@fleet.test","password":"Admin@123"}'
+$id = docker exec pg psql -U fleet -d fleetdb -tA -c "SELECT booking_id FROM bookings WHERE status = 'Confirmed' AND start_ts > now() LIMIT 1"
+try { Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/bookings/$id/return" -ContentType application/json -WebSession $admin -Body '{"actualKm":10,"severity":"None"}' }
+catch { $r = $_.Exception.Response; $s = $r.GetResponseStream(); $s.Position = 0; "$([int]$r.StatusCode) $((New-Object IO.StreamReader($s)).ReadToEnd())" }
+```
+
+Expected output, with your booking id:
+
+```
+422 {"error":"Only Active bookings can be checked in; booking 163 is Confirmed"}
+```
+
+On Mac or Linux:
+
+```bash
+curl -s -c cookies.txt -H "Content-Type: application/json" -d '{"email":"admin@fleet.test","password":"Admin@123"}' http://localhost:3000/api/auth/login
+id=$(docker exec pg psql -U fleet -d fleetdb -tA -c "SELECT booking_id FROM bookings WHERE status = 'Confirmed' AND start_ts > now() LIMIT 1")
+curl -s -w ' %{http_code}\n' -b cookies.txt -H "Content-Type: application/json" -d '{"actualKm":10,"severity":"None"}' "http://localhost:3000/api/bookings/$id/return"
+```
+
+The booking stays Confirmed. The same request returns 422 for a Completed or Cancelled booking, and 404 for an unknown id.
+
 ## A short tour
 
 1. Log in as **Priya** and book a car for next week. Change the dates and watch the quote update.
 2. Log in as **admin** in a private window. Open **Bookings**, find Priya's booking, and click **Reject**.
 3. Back in Priya's window, **My bookings** shows the booking as cancelled, with the reason and the refund.
 4. Book the same car for the same dates. It works, because rejected bookings don't block the car.
-5. As admin, open **Fleet**. Click **Service** on a car flagged for maintenance. A trigger clears the flag.
+5. As admin, open **Fleet**. Click **Service** on a car flagged for maintenance. A trigger clears the flag, and the line at the top of the page reports it.
 6. Open **Analytics** and click through the SQL reports. Each one shows the query next to its result.
 
 The demo data has a few cases set up on purpose:
-- The Honda City is 200 km from its service limit. Book it for 350 km and check it in, and it gets flagged.
+- The Honda City is 200 km from its service limit. Meera's booking for it becomes Active at pick-up time. Check it in with 350 km and it gets flagged.
 - The Kia Seltos is a few hours overdue, so returning it triggers a late fee.
 - The BMW 3 Series has insurance expiring in 12 days, so bookings past that date are refused.
 
@@ -195,7 +224,8 @@ docs/             ER diagram, relational schema, data dictionary, architecture, 
 - An `EXCLUDE` constraint stops overlapping bookings for the same car or the same chauffeur. Two people clicking Book at the same moment can't both succeed.
 - `calc_fare()` calculates the price: daily rate, per-km charge, loyalty discount, one hour of grace, then a late fee.
 - `sp_reject_booking()` cancels an upcoming booking, stores the reason and refunds what was paid, all in one call.
-- `sp_complete_return()` handles check-in and final pricing.
+- `sp_complete_return()` handles check-in and final pricing. The API only calls it for Active bookings.
+- `sp_activate_due_bookings()` turns Confirmed bookings into Active ones once their pick-up time has passed. There's no scheduler, so the admin dashboard and the check-in route call it.
 - Triggers flag a car when it's over its service interval or has post-rental damage, clear that flag when a service is logged, and stop an expired-licence chauffeur from being assigned.
 - Row-level security on the booking history means a customer can only read their own rows, even if the app has a bug.
 
@@ -211,7 +241,7 @@ More detail is in `docs/`: the [ER diagram](docs/ER_Diagram.mmd), [relational sc
 | `npm is not recognized` | Node.js isn't installed, or the terminal was open during installation. Install Node LTS, close PowerShell completely, and open a new one. |
 | `running scripts is disabled on this system` | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once. |
 | `db:reset` fails with `ECONNREFUSED` | PostgreSQL is still starting. Wait about ten seconds and run it again. |
-| Inspections tab is empty, or telematics says MongoDB isn't reachable | The `mongo` container isn't running. Run `docker start mongo`, then click Refresh. |
+| Inspections tab is empty, or telematics says MongoDB isn't reachable | The `mongo` container isn't running. Run `docker start mongo`, then reload the page. |
 | `Port 3000 is already in use` | Start on another port with `npm run dev -- -p 3001`. |
 | Keeps sending you back to the login page | Your session expired, or `JWT_SECRET` changed. Log in again. |
 
