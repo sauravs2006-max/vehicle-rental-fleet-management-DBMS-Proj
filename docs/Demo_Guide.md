@@ -4,7 +4,7 @@ Start with `npm run dev`. Keep two browser windows: admin and customer (use a pr
 
 | Marks | Item | What to show |
 |---|---|---|
-| 5 | Database design | `docs/ER_Diagram.mmd` (render it on mermaid.live) and `docs/Relational_Schema.md`. Mention the 10 tables, the PK/FK links, and that inspections and telematics are in MongoDB. |
+| 5 | Database design | `docs/FleetRent_ERD_drawio.png` (Chen notation), `docs/ER_Diagram.png` and `docs/Schema_Diagram.png`. Mention the 10 tables, the PK/FK links, and that inspections and telematics are in MongoDB. |
 | 9 | Database creation | `db/schema.sql`: CREATE / ALTER / DROP, CHECK, UNIQUE, the EXCLUDE constraint, indexes, views. For MongoDB: `scripts/init-mongo.mjs` (validator + indexes). Technology justification: README table "Why two databases". |
 | 8 | SQL operations and queries | Dashboard, Analytics tab: click Q1 to Q11. Each shows the SQL, the technique (JOIN, HAVING, correlated NOT EXISTS, scalar subquery, window function, CTE, recursive CTE) and the result. DML: add a vehicle, edit its rate, remove it (Fleet tab). |
 | 13 | Advanced concepts | Log a service on a flagged vehicle (Fleet tab): trigger resets the counter. Customer books; admin rejects (Bookings tab): `sp_reject_booking` refunds and frees the slot. Mention `calc_fare()` and the other triggers. Run `db/tests.sql` (22 checks) in a terminal. |

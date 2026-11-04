@@ -1,4 +1,4 @@
-# Project documentation additions
+# Objectives, requirements and conclusion
 
 ## Objectives
 
@@ -27,10 +27,16 @@
 
 ## Relations that are not entities in the ER model
 
-- `bookings`: associative relation between users, vehicles and drivers. It has its own attributes (period, fare, status).
-- `payments`, `maintenance_logs`, `damage_reports`, `reviews`, `disputes`: weak entities. They are shown as entities, but they cannot exist without their owner.
-- `damage_reports.mongo_inspection_id`: a reference to a MongoDB document. It is enforced by the application, not by PostgreSQL.
-- The four views (`v_fleet_utilization`, `v_maintenance_alerts`, `v_expiring_documents`, `v_driver_performance`): derived relations, not stored tables.
+Every base table maps from an entity: `bookings` is the associative entity between users, vehicles and drivers, and `payments`, `maintenance_logs`, `damage_reports`, `reviews` and `disputes` are weak entities owned by a booking or a vehicle. Each one-to-many relationship is a foreign key on the "many" side, so no relationship needed its own table.
+
+The relations that are not entities are the four views, which are derived from the base tables each time they are queried:
+
+- `v_fleet_utilization`
+- `v_maintenance_alerts`
+- `v_expiring_documents`
+- `v_driver_performance`
+
+`damage_reports.mongo_inspection_id` is a reference to a MongoDB document. It is an attribute, kept consistent by the application rather than by a PostgreSQL foreign key.
 
 ## Conclusion
 

@@ -45,6 +45,7 @@ This dictionary reflects `db/schema.sql`, `scripts/seed.mjs`, `lib/mongo.ts`, an
 | `registration_expiry` | DATE | NOT NULL | Registration expiry |
 | `insurance_expiry` | DATE | NOT NULL | Insurance expiry |
 | `puc_expiry` | DATE | NOT NULL | Pollution certificate expiry |
+| `image_url` | TEXT | nullable (added by ALTER TABLE) | Photo of the vehicle |
 
 ### `bookings`
 | Column | Type | Key / rules | Purpose |
@@ -59,6 +60,7 @@ This dictionary reflects `db/schema.sql`, `scripts/seed.mjs`, `lib/mongo.ts`, an
 | `actual_distance_km` | INT | nullable, >= 0 | Actual distance |
 | `total_fare` | NUMERIC(12,2) | >= 0 | Final / quoted fare |
 | `status` | VARCHAR(15) | CHECK | Confirmed, Active, Completed or Cancelled |
+| `loyalty_discount` | BOOLEAN | NOT NULL, default FALSE (added by ALTER TABLE) | Whether the 5% loyalty discount was applied |
 | `cancel_reason` | TEXT | CHECK: required (5+ characters) when status is Cancelled | Why an admin rejected the booking |
 | `created_at` | TIMESTAMPTZ | NOT NULL | Booking creation timestamp |
 

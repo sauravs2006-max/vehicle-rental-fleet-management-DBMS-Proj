@@ -16,7 +16,7 @@ Stack: Next.js (App Router, TypeScript, Tailwind), PostgreSQL 16, MongoDB 7.
 - If an admin rejects an upcoming booking, the reason is shown and the money is refunded.
 
 **Admins**
-- **Overview:** revenue, fleet size, active and upcoming rentals, and a "needs attention" list.
+- **Overview:** net revenue, fleet size, active and upcoming rentals, open disputes, and bookings and revenue per branch for the last 7 days.
 - **Bookings:** assign a chauffeur, check a vehicle back in (late fees, early-return refunds, damage), reject an upcoming booking, resolve disputes.
 - **Fleet:** add, edit and remove vehicles, log services, see utilisation, service alerts, expiring documents and chauffeur ratings.
 - **Inspections:** create, edit and delete inspection reports stored in MongoDB.
@@ -93,7 +93,7 @@ npm run dev
 ✔ schema applied
 ✔ roles and row-level security applied
 ✔ MongoDB ready: inspections validator + indexes
-✔ seeded: 160 completed bookings, 320 inspection docs, 1548 telematics readings
+✔ seeded: 261 completed bookings, 522 inspection docs, 2574 telematics readings
 ```
 
 If it fails with a connection error, PostgreSQL is probably still starting. Wait about ten seconds and run it again.
@@ -182,7 +182,7 @@ db/
   tests.sql       SQL test suite
   rbac-tests.sql  security test suite
 scripts/          database setup, demo data, MongoDB setup and its test
-docs/             ER diagram, relational schema, data dictionary, architecture, API notes, demo guide
+docs/             diagrams, schema, data dictionary, architecture, API notes, demo guide, test results, screenshots
 ```
 
 ## How the database is designed
@@ -199,7 +199,7 @@ docs/             ER diagram, relational schema, data dictionary, architecture, 
 - Triggers flag a car when it's over its service interval or has post-rental damage, clear that flag when a service is logged, and stop an expired-licence chauffeur from being assigned.
 - Row-level security on the booking history means a customer can only read their own rows, even if the app has a bug.
 
-More detail is in `docs/`: the [ER diagram](docs/ER_Diagram.mmd), [relational schema](docs/Relational_Schema.md), [data dictionary](docs/Data_Dictionary.md), [architecture](docs/Architecture.md), [API notes](docs/API_Documentation.md) and [demo guide](docs/Demo_Guide.md).
+More detail is in `docs/`: the ER diagram ([snapshot](docs/ER_Diagram.png), [draw.io file](docs/FleetRent_ERD.drawio), [Mermaid source](docs/ER_Diagram.mmd)), the relational schema ([diagram](docs/Schema_Diagram.png), [tables](docs/Relational_Schema.md)), [data dictionary](docs/Data_Dictionary.md), [architecture](docs/Architecture.md), [API notes](docs/API_Documentation.md), [demo guide](docs/Demo_Guide.md), [objectives and conclusion](docs/Objectives_and_Conclusion.md), [test results](docs/test-results/README.md) and [screenshots](docs/screenshots/README.md).
 
 ## Troubleshooting
 
@@ -211,7 +211,7 @@ More detail is in `docs/`: the [ER diagram](docs/ER_Diagram.mmd), [relational sc
 | `npm is not recognized` | Node.js isn't installed, or the terminal was open during installation. Install Node LTS, close PowerShell completely, and open a new one. |
 | `running scripts is disabled on this system` | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once. |
 | `db:reset` fails with `ECONNREFUSED` | PostgreSQL is still starting. Wait about ten seconds and run it again. |
-| Inspections tab is empty, or telematics says MongoDB isn't reachable | The `mongo` container isn't running. Run `docker start mongo`, then click Refresh. |
+| Inspections tab is empty, or telematics says MongoDB isn't reachable | The `mongo` container isn't running. Run `docker start mongo`, then reload the page. |
 | `Port 3000 is already in use` | Start on another port with `npm run dev -- -p 3001`. |
 | Keeps sending you back to the login page | Your session expired, or `JWT_SECRET` changed. Log in again. |
 
@@ -227,7 +227,7 @@ More detail is in `docs/`: the [ER diagram](docs/ER_Diagram.mmd), [relational sc
 
 | Name | USN | Main areas |
 |---|---|---|
-| Saurav Shashidhara | PES1UG24AM398 | |
-| Sateesh | PES1UG24AM397 | |
+| Saurav Shashidhara | PES1UG24AM398 | Database design (ER model, schema, constraints), stored functions, procedures and triggers, roles and row-level security, booking and check-in API |
+| Sateesh | PES1UG24AM397 | MongoDB (inspections validator, CRUD, telematics aggregation), SQL reports and analytics, admin dashboard UI, testing and documentation |
 
 The commit history shows each person's contributions.
